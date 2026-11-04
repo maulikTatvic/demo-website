@@ -1,0 +1,21 @@
+{
+  "name": "nexustech-solutions",
+  "version": "1.0.0",
+  "description": "Enterprise Technology Platform - Multi-page website with Google Tag Manager integration",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "build": "echo \"Static build complete\""
+  },
+  "keywords": [
+    "enterprise",
+    "cloud",
+    "gtm",
+    "website"
+  ],
+  "author": "NexusTech",
+  "license": "ISC",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
