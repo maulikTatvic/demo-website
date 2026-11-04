@@ -1,10 +1,10 @@
 /**
  * NexusTech Solutions - Main Application & Analytics Script
+ * Consolidated Parameter Schema: Exactly 16 unique parameters (<= 18 limit)
  * Complies with strict coding standards:
  * - Function length <= 30 lines
  * - Function parameters <= 3
  * - Nesting depth <= 3
- * - Safe dataLayer event dispatching
  */
 
 'use strict';
@@ -17,7 +17,7 @@ const APP_CONFIG = {
 };
 
 /**
- * Pushes a custom analytics event to Google Tag Manager dataLayer
+ * Pushes custom event to GTM dataLayer using consolidated parameter schema
  * @param {string} eventName 
  * @param {Object} eventParams 
  */
@@ -54,7 +54,6 @@ function toggleMobileDrawer(isOpen) {
   const toggleBtn = document.getElementById('mobile-toggle');
   
   if (!drawer || !overlay) return;
-  
   drawer.classList.toggle(APP_CONFIG.OPEN_CLASS, isOpen);
   overlay.classList.toggle(APP_CONFIG.OPEN_CLASS, isOpen);
   document.body.style.overflow = isOpen ? 'hidden' : '';
@@ -72,26 +71,18 @@ function initMobileNavigation() {
   const closeBtn = document.getElementById('drawer-close');
   const overlay = document.getElementById('drawer-overlay');
 
-  if (toggleBtn) {
-    toggleBtn.addEventListener('click', () => toggleMobileDrawer(true));
-  }
-  if (closeBtn) {
-    closeBtn.addEventListener('click', () => toggleMobileDrawer(false));
-  }
-  if (overlay) {
-    overlay.addEventListener('click', () => toggleMobileDrawer(false));
-  }
+  if (toggleBtn) toggleBtn.addEventListener('click', () => toggleMobileDrawer(true));
+  if (closeBtn) closeBtn.addEventListener('click', () => toggleMobileDrawer(false));
+  if (overlay) overlay.addEventListener('click', () => toggleMobileDrawer(false));
   
-  window.addEventListener('keydown', (event) => {
-    if (event.key === APP_CONFIG.KEYS.ESCAPE) {
-      toggleMobileDrawer(false);
-    }
+  window.addEventListener('keydown', (e) => {
+    if (e.key === APP_CONFIG.KEYS.ESCAPE) toggleMobileDrawer(false);
   });
 }
 
 /**
- * Toggles an accordion item and dispatches GTM event
- * Custom Event #8: faq_accordion_toggle
+ * Toggles accordion and tracks Custom Event #8: faq_accordion_toggle
+ * Parameters: item_name, item_category, interaction_state
  * @param {HTMLElement} item 
  */
 function toggleAccordion(item) {
@@ -102,11 +93,11 @@ function toggleAccordion(item) {
   item.classList.toggle(APP_CONFIG.ACTIVE_CLASS, willOpen);
   if (trigger) {
     trigger.setAttribute('aria-expanded', String(willOpen));
-    const questionText = trigger.querySelector('span')?.textContent.trim() || 'FAQ Question';
+    const question = trigger.querySelector('span')?.textContent.trim() || 'FAQ';
     trackCustomEvent('faq_accordion_toggle', {
-      faq_question: questionText,
-      accordion_state: willOpen ? 'opened' : 'closed',
-      faq_category: 'general_support'
+      item_name: question,
+      item_category: 'general_support',
+      interaction_state: willOpen ? 'opened' : 'closed'
     });
   }
 }
@@ -145,6 +136,7 @@ function updatePricingDisplay(isAnnual) {
 /**
  * Initializes pricing toggle switch
  * Custom Event #3: pricing_plan_toggle
+ * Parameters: billing_cycle, discount_applied, interaction_state
  */
 function initPricingSwitcher() {
   const toggle = document.getElementById('pricing-billing-toggle');
@@ -154,9 +146,9 @@ function initPricingSwitcher() {
     const isAnnual = e.target.checked;
     updatePricingDisplay(isAnnual);
     trackCustomEvent('pricing_plan_toggle', {
-      billing_interval: isAnnual ? 'annual' : 'monthly',
+      billing_cycle: isAnnual ? 'annual' : 'monthly',
       discount_applied: isAnnual ? '20%' : 'none',
-      page_location: 'pricing_page'
+      interaction_state: isAnnual ? 'annual' : 'monthly'
     });
   });
 }
@@ -164,12 +156,13 @@ function initPricingSwitcher() {
 /**
  * Tracks pricing tier button selection
  * Custom Event #4: pricing_plan_select
+ * Parameters: item_name, item_price, billing_cycle
  */
 function initPricingPlanTracking() {
   const pricingCards = document.querySelectorAll('.pricing-card');
   pricingCards.forEach(card => {
     const btn = card.querySelector('.btn');
-    const title = card.querySelector('.card-title')?.textContent.trim() || 'Custom Plan';
+    const title = card.querySelector('.card-title')?.textContent.trim() || 'Plan';
     const price = card.querySelector('.price-amount')?.textContent.trim() || 'Custom';
     
     if (btn) {
@@ -177,8 +170,8 @@ function initPricingPlanTracking() {
         const toggle = document.getElementById('pricing-billing-toggle');
         const isAnnual = toggle ? toggle.checked : false;
         trackCustomEvent('pricing_plan_select', {
-          plan_name: title,
-          plan_price: price,
+          item_name: title,
+          item_price: price,
           billing_cycle: isAnnual ? 'annual' : 'monthly'
         });
       });
@@ -200,24 +193,23 @@ function filterCategoryItems(category) {
 }
 
 /**
- * Dispatches filter tracking events for case studies or careers
+ * Dispatches filter tracking events
  * Custom Event #5: case_study_filter
  * Custom Event #6: job_search_filter
+ * Parameters: filter_name, filter_value, item_category
  * @param {string} category 
  */
 function trackFilterChange(category) {
   const isCareers = APP_CONFIG.CURRENT_PATH.includes('careers');
-  if (isCareers) {
-    trackCustomEvent('job_search_filter', {
-      department_filter: category,
-      filter_section: 'careers_openings'
-    });
-  } else {
-    trackCustomEvent('case_study_filter', {
-      filter_category: category,
-      filter_type: 'industry'
-    });
-  }
+  const filterName = isCareers ? 'department' : 'industry';
+  const itemCategory = isCareers ? 'careers' : 'case_studies';
+  const eventName = isCareers ? 'job_search_filter' : 'case_study_filter';
+
+  trackCustomEvent(eventName, {
+    filter_name: filterName,
+    filter_value: category,
+    item_category: itemCategory
+  });
 }
 
 /**
@@ -239,23 +231,24 @@ function initFilterTabs() {
 /**
  * Tracks job application CTA clicks on careers page
  * Custom Event #7: job_apply_click
+ * Parameters: item_name, item_category, location
  */
 function initJobApplyTracking() {
-  const jobCards = document.querySelectorAll('.card[data-category]');
   if (!APP_CONFIG.CURRENT_PATH.includes('careers')) return;
+  const jobCards = document.querySelectorAll('.card[data-category]');
 
   jobCards.forEach(card => {
     const applyBtn = card.querySelector('.btn');
-    const jobTitle = card.querySelector('.card-title')?.textContent.trim() || 'Open Role';
-    const department = card.querySelector('.badge')?.textContent.trim() || 'General';
-    const location = card.querySelector('span[style*="var(--color-text-light)"]')?.textContent.trim() || 'Remote';
+    const title = card.querySelector('.card-title')?.textContent.trim() || 'Role';
+    const dept = card.querySelector('.badge')?.textContent.trim() || 'Engineering';
+    const loc = card.querySelector('span[style*="var(--color-text-light)"]')?.textContent.trim() || 'Remote';
 
     if (applyBtn) {
       applyBtn.addEventListener('click', () => {
         trackCustomEvent('job_apply_click', {
-          job_title: jobTitle,
-          job_department: department,
-          job_location: location
+          item_name: title,
+          item_category: dept,
+          location: loc
         });
       });
     }
@@ -265,6 +258,7 @@ function initJobApplyTracking() {
 /**
  * Handles consultation form submission
  * Custom Event #1: lead_form_submit
+ * Parameters: form_id, form_name, form_status, inquiry_type, company_name
  * @param {HTMLFormElement} form 
  */
 function handleLeadFormSubmit(form) {
@@ -279,13 +273,13 @@ function handleLeadFormSubmit(form) {
   trackCustomEvent('lead_form_submit', {
     form_id: 'contact-form',
     form_name: 'consultation_request',
+    form_status: 'success',
     inquiry_type: inquiryType,
-    company_name: companyName,
-    form_status: 'success'
+    company_name: companyName
   });
 
   if (feedback) {
-    feedback.textContent = 'Thank you! Your message has been received. Our team will contact you shortly.';
+    feedback.textContent = 'Thank you! Your message has been received.';
     feedback.className = 'form-feedback success';
   }
   form.reset();
@@ -295,6 +289,7 @@ function handleLeadFormSubmit(form) {
 /**
  * Handles newsletter subscription form submission
  * Custom Event #2: newsletter_subscribe
+ * Parameters: form_id, form_name, form_status, location
  * @param {HTMLFormElement} form 
  */
 function handleNewsletterSubmit(form) {
@@ -306,12 +301,13 @@ function handleNewsletterSubmit(form) {
 
   trackCustomEvent('newsletter_subscribe', {
     form_id: 'newsletter-form',
-    form_location: 'global_footer',
-    subscription_status: 'success'
+    form_name: 'newsletter_signup',
+    form_status: 'success',
+    location: 'global_footer'
   });
 
   if (feedback) {
-    feedback.textContent = 'Subscribed successfully! Thank you for joining our newsletter.';
+    feedback.textContent = 'Subscribed successfully! Thank you for joining.';
     feedback.className = 'form-feedback success';
   }
   form.reset();
@@ -342,20 +338,21 @@ function initForms() {
 /**
  * Tracks navigation dropdown and menu link clicks
  * Custom Event #9: nav_menu_click
+ * Parameters: item_name, item_category, target_url
  */
 function initNavigationTracking() {
-  const dropdownLinks = document.querySelectorAll('.dropdown-link, .nav-list > li > a.nav-link');
-  dropdownLinks.forEach(link => {
+  const links = document.querySelectorAll('.dropdown-link, .nav-list > li > a.nav-link');
+  links.forEach(link => {
     link.addEventListener('click', () => {
-      const parentDropdown = link.closest('.nav-item-dropdown');
-      const category = parentDropdown ? parentDropdown.querySelector('.nav-link')?.textContent.trim() : 'Main';
-      const linkText = link.querySelector('strong')?.textContent.trim() || link.textContent.trim();
-      const targetUrl = link.getAttribute('href') || '#';
+      const parent = link.closest('.nav-item-dropdown');
+      const category = parent ? parent.querySelector('.nav-link')?.textContent.trim() : 'Main';
+      const text = link.querySelector('strong')?.textContent.trim() || link.textContent.trim();
+      const href = link.getAttribute('href') || '#';
 
       trackCustomEvent('nav_menu_click', {
-        menu_category: category,
-        link_text: linkText,
-        link_url: targetUrl
+        item_name: text,
+        item_category: category,
+        target_url: href
       });
     });
   });
@@ -364,6 +361,7 @@ function initNavigationTracking() {
 /**
  * Tracks clicks on the top 10+ page directory bar
  * Custom Event #10: quick_directory_click
+ * Parameters: item_name, source_url, target_url, location
  */
 function initDirectoryBarTracking() {
   const pills = document.querySelectorAll('.page-pill');
@@ -371,9 +369,10 @@ function initDirectoryBarTracking() {
     pill.addEventListener('click', () => {
       const targetPage = pill.getAttribute('href') || 'index.html';
       trackCustomEvent('quick_directory_click', {
-        target_page: targetPage,
-        source_page: APP_CONFIG.CURRENT_PATH,
-        bar_location: 'top_header_banner'
+        item_name: targetPage,
+        source_url: APP_CONFIG.CURRENT_PATH,
+        target_url: targetPage,
+        location: 'top_header_banner'
       });
     });
   });
