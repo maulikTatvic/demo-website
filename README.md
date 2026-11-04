@@ -33,4 +33,5 @@ Select your Render project (**`prj-dblerbon74is739ul5b0`**) to instantly deploy 
 
 ## 🏷️ Google Tag Manager
 
-Google Tag Manager container snippet (`GTM-MNTKWVCF`) is active across all 11 pages in the `<head>` section.
+Google Tag Manager container snippet (`GTM-T5N8D8LP`) is active across all 11 pages in the `<head>` section.
+
