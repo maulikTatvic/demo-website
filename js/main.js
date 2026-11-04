@@ -286,32 +286,77 @@ function handleLeadFormSubmit(form) {
   setTimeout(() => { if (feedback) feedback.className = 'form-feedback'; }, 5000);
 }
 
+const RECAPTCHA_SITE_KEY = '6Ld7dw8uAAAAAF0qsVlUG3njrghGw-Bi29BfxQX7';
+
 /**
- * Handles newsletter subscription form submission
+ * Executes reCAPTCHA Enterprise and returns the token
+ * @param {string} action - reCAPTCHA action name
+ * @returns {Promise<string>} reCAPTCHA token
+ */
+function executeRecaptcha(action) {
+  return new Promise((resolve, reject) => {
+    if (typeof grecaptcha === 'undefined' || !grecaptcha.enterprise) {
+      reject(new Error('reCAPTCHA not loaded'));
+      return;
+    }
+    grecaptcha.enterprise.ready(async () => {
+      try {
+        const token = await grecaptcha.enterprise.execute(RECAPTCHA_SITE_KEY, { action });
+        resolve(token);
+      } catch (err) {
+        reject(err);
+      }
+    });
+  });
+}
+
+/**
+ * Shows feedback message on a form element
+ * @param {HTMLElement} feedback
+ * @param {{ text: string, type: 'success'|'error' }} opts
+ */
+function showFormFeedback(feedback, { text, type }) {
+  if (!feedback) return;
+  feedback.textContent = text;
+  feedback.className = `form-feedback ${type}`;
+  setTimeout(() => { feedback.className = 'form-feedback'; }, 5000);
+}
+
+/**
+ * Handles newsletter subscription with reCAPTCHA Enterprise verification
  * Custom Event #2: newsletter_subscribe
  * Parameters: form_id, form_name, form_status, location
- * @param {HTMLFormElement} form 
+ * @param {HTMLFormElement} form
  */
-function handleNewsletterSubmit(form) {
+async function handleNewsletterSubmit(form) {
   if (!form.checkValidity()) {
     form.reportValidity();
     return;
   }
+
   const feedback = form.querySelector('.form-feedback');
+  const submitBtn = form.querySelector('[type="submit"]');
 
-  trackCustomEvent('newsletter_subscribe', {
-    form_id: 'newsletter-form',
-    form_name: 'newsletter_signup',
-    form_status: 'success',
-    location: 'global_footer'
-  });
+  if (submitBtn) submitBtn.disabled = true;
 
-  if (feedback) {
-    feedback.textContent = 'Subscribed successfully! Thank you for joining.';
-    feedback.className = 'form-feedback success';
+  try {
+    await executeRecaptcha('NEWSLETTER_SUBSCRIBE');
+
+    trackCustomEvent('newsletter_subscribe', {
+      form_id: 'newsletter-form',
+      form_name: 'newsletter_signup',
+      form_status: 'success',
+      location: 'global_footer'
+    });
+
+    showFormFeedback(feedback, { text: 'Subscribed successfully! Thank you for joining.', type: 'success' });
+    form.reset();
+  } catch (err) {
+    console.warn('[reCAPTCHA] Verification failed:', err);
+    showFormFeedback(feedback, { text: 'Verification failed. Please try again.', type: 'error' });
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
   }
-  form.reset();
-  setTimeout(() => { if (feedback) feedback.className = 'form-feedback'; }, 5000);
 }
 
 /**
