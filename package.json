@@ -17,6 +17,8 @@
   "license": "ISC",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "@google-cloud/recaptcha-enterprise": "^7.3.0"
   }
 }
-

@@ -258,10 +258,11 @@ function initJobApplyTracking() {
 /**
  * Handles consultation form submission
  * Custom Event #1: lead_form_submit
- * Parameters: form_id, form_name, form_status, inquiry_type, company_name
- * @param {HTMLFormElement} form 
+ * Parameters: form_id, form_name, form_status, inquiry_type, company_name, recaptcha_score
+ * @param {HTMLFormElement} form
+ * @param {number|null} recaptchaScore - reCAPTCHA Enterprise risk score (0.0-1.0)
  */
-function handleLeadFormSubmit(form) {
+function handleLeadFormSubmit(form, recaptchaScore = null) {
   if (!form.checkValidity()) {
     form.reportValidity();
     return;
@@ -275,7 +276,8 @@ function handleLeadFormSubmit(form) {
     form_name: 'consultation_request',
     form_status: 'success',
     inquiry_type: inquiryType,
-    company_name: companyName
+    company_name: companyName,
+    recaptcha_score: recaptchaScore !== null ? recaptchaScore : 'unavailable'
   });
 
   if (feedback) {
@@ -284,30 +286,6 @@ function handleLeadFormSubmit(form) {
   }
   form.reset();
   setTimeout(() => { if (feedback) feedback.className = 'form-feedback'; }, 5000);
-}
-
-const RECAPTCHA_SITE_KEY = '6Ld7dw8uAAAAAF0qsVlUG3njrghGw-Bi29BfxQX7';
-
-/**
- * Executes reCAPTCHA Enterprise and returns the token
- * @param {string} action - reCAPTCHA action name
- * @returns {Promise<string>} reCAPTCHA token
- */
-function executeRecaptcha(action) {
-  return new Promise((resolve, reject) => {
-    if (typeof grecaptcha === 'undefined' || !grecaptcha.enterprise) {
-      reject(new Error('reCAPTCHA not loaded'));
-      return;
-    }
-    grecaptcha.enterprise.ready(async () => {
-      try {
-        const token = await grecaptcha.enterprise.execute(RECAPTCHA_SITE_KEY, { action });
-        resolve(token);
-      } catch (err) {
-        reject(err);
-      }
-    });
-  });
 }
 
 /**
@@ -323,42 +301,29 @@ function showFormFeedback(feedback, { text, type }) {
 }
 
 /**
- * Handles newsletter subscription with reCAPTCHA Enterprise verification
+ * Handles newsletter subscription
  * Custom Event #2: newsletter_subscribe
  * Parameters: form_id, form_name, form_status, location
  * @param {HTMLFormElement} form
  */
-async function handleNewsletterSubmit(form) {
+function handleNewsletterSubmit(form) {
   if (!form.checkValidity()) {
     form.reportValidity();
     return;
   }
 
   const feedback = form.querySelector('.form-feedback');
-  const submitBtn = form.querySelector('[type="submit"]');
 
-  if (submitBtn) submitBtn.disabled = true;
+  trackCustomEvent('newsletter_subscribe', {
+    form_id: 'newsletter-form',
+    form_name: 'newsletter_signup',
+    form_status: 'success',
+    location: 'global_footer'
+  });
 
-  try {
-    await executeRecaptcha('NEWSLETTER_SUBSCRIBE');
-
-    trackCustomEvent('newsletter_subscribe', {
-      form_id: 'newsletter-form',
-      form_name: 'newsletter_signup',
-      form_status: 'success',
-      location: 'global_footer'
-    });
-
-    showFormFeedback(feedback, { text: 'Subscribed successfully! Thank you for joining.', type: 'success' });
-    form.reset();
-  } catch (err) {
-    console.warn('[reCAPTCHA] Verification failed:', err);
-    showFormFeedback(feedback, { text: 'Verification failed. Please try again.', type: 'error' });
-  } finally {
-    if (submitBtn) submitBtn.disabled = false;
-  }
+  showFormFeedback(feedback, { text: 'Subscribed successfully! Thank you for joining.', type: 'success' });
+  form.reset();
 }
-
 /**
  * Initializes form submission listeners
  */
@@ -367,7 +332,33 @@ function initForms() {
   if (contactForm) {
     contactForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      handleLeadFormSubmit(contactForm);
+      if (typeof grecaptcha !== 'undefined' && grecaptcha.enterprise) {
+        grecaptcha.enterprise.ready(async () => {
+          let recaptchaScore = null;
+          try {
+            const token = await grecaptcha.enterprise.execute('6Ld7dw8uAAAAAF0qsVlUG3njrghGw-Bi29BfxQX7', {action: 'LOGIN'});
+            console.log('[reCAPTCHA] Token generated:', token.substring(0, 40) + '...');
+
+            const res = await fetch('/api/verify-recaptcha', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token, action: 'LOGIN' })
+            });
+            const result = await res.json();
+            console.log('[reCAPTCHA] Assessment result:', result);
+
+            if (result.success && result.score !== undefined) {
+              recaptchaScore = result.score;
+              console.log('[reCAPTCHA] Score: ' + recaptchaScore + ' (0.0 = bot, 1.0 = human)');
+            }
+          } catch (err) {
+            console.warn('[reCAPTCHA] Error:', err.message);
+          }
+          handleLeadFormSubmit(contactForm, recaptchaScore);
+        });
+      } else {
+        handleLeadFormSubmit(contactForm, null);
+      }
     });
   }
 
