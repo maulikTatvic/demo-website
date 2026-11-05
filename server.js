@@ -172,6 +172,13 @@ function serveFile(res, filePath) {
  * @param {http.ServerResponse} res
  */
 function handleRequest(req, res) {
+  if (req.method === 'GET' && req.url === '/api/health') {
+    const creds = process.env.GOOGLE_APPLICATION_CREDENTIALS ? 'set' : 'missing';
+    const gcpB64 = process.env.GCP_CREDENTIALS_BASE64 ? 'set' : 'missing';
+    sendJson(res, 200, { status: 'ok', GOOGLE_APPLICATION_CREDENTIALS: creds, GCP_CREDENTIALS_BASE64: gcpB64 });
+    return;
+  }
+
   if (req.method === 'POST' && req.url === '/api/verify-recaptcha') {
     handleVerifyRecaptcha(req, res);
     return;
