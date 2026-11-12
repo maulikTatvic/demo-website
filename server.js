@@ -9,13 +9,19 @@ const fs = require('fs');
 const path = require('path');
 const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise');
 
-// Support base64-encoded GCP credentials via env var (used on Render)
-if (process.env.GCP_CREDENTIALS_BASE64 && !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
-  const decoded = Buffer.from(process.env.GCP_CREDENTIALS_BASE64, 'base64').toString('utf8');
-  const tmpPath = require('os').tmpdir() + '/gcp-key.json';
-  require('fs').writeFileSync(tmpPath, decoded);
-  process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
-  console.log('[GCP] Credentials loaded from GCP_CREDENTIALS_BASE64');
+// Support local gcp-credentials.json or base64-encoded GCP credentials via env var
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const localKeyPath = path.join(__dirname, 'gcp-credentials.json');
+  if (fs.existsSync(localKeyPath)) {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = localKeyPath;
+    console.log('[GCP] Credentials loaded from local gcp-credentials.json');
+  } else if (process.env.GCP_CREDENTIALS_BASE64) {
+    const decoded = Buffer.from(process.env.GCP_CREDENTIALS_BASE64, 'base64').toString('utf8');
+    const tmpPath = path.join(require('os').tmpdir(), 'gcp-key.json');
+    fs.writeFileSync(tmpPath, decoded);
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
+    console.log('[GCP] Credentials loaded from GCP_CREDENTIALS_BASE64');
+  }
 }
 
 const PORT = process.env.PORT || 8080;
