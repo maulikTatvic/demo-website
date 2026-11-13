@@ -332,12 +332,12 @@ function initForms() {
   if (contactForm) {
     contactForm.addEventListener('submit', (e) => {
       e.preventDefault();
-      if (typeof grecaptcha !== 'undefined' && grecaptcha.enterprise) {
-        grecaptcha.enterprise.ready(async () => {
+      if (typeof grecaptcha !== 'undefined') {
+        grecaptcha.ready(async () => {
           let recaptchaScore = null;
           try {
-            const token = await grecaptcha.enterprise.execute('6Ld7dw8uAAAAAF0qsVlUG3njrghGw-Bi29BfxQX7', {action: 'LOGIN'});
-            console.log('[reCAPTCHA] Token generated:', token.substring(0, 40) + '...');
+            const token = await grecaptcha.execute('6LcX4bUtAAAAAJZxhC1uLjXhR_ACTfyvV7kWPVEh', { action: 'LOGIN' });
+            console.log('[reCAPTCHA v3] Token generated:', token.substring(0, 40) + '...');
 
             const res = await fetch('/api/verify-recaptcha', {
               method: 'POST',
@@ -345,14 +345,14 @@ function initForms() {
               body: JSON.stringify({ token, action: 'LOGIN' })
             });
             const result = await res.json();
-            console.log('[reCAPTCHA] Assessment result:', result);
+            console.log('[reCAPTCHA v3] Verification result:', result);
 
             if (result.success && result.score !== undefined) {
               recaptchaScore = result.score;
-              console.log('[reCAPTCHA] Score: ' + recaptchaScore + ' (0.0 = bot, 1.0 = human)');
+              console.log('[reCAPTCHA v3] Score: ' + recaptchaScore + ' (0.0 = bot, 1.0 = human)');
             }
           } catch (err) {
-            console.warn('[reCAPTCHA] Error:', err.message);
+            console.warn('[reCAPTCHA v3] Error:', err.message);
           }
           handleLeadFormSubmit(contactForm, recaptchaScore);
         });
