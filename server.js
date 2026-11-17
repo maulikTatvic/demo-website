@@ -92,13 +92,13 @@ function sendJson(res, statusCode, data) {
 }
 
 /**
- * Handles POST /api/verify-recaptcha for reCAPTCHA v3
+ * Handles POST /api/verify-recaptcha for reCAPTCHA v2
  * @param {http.IncomingMessage} req
  * @param {http.ServerResponse} res
  */
 async function handleVerifyRecaptcha(req, res) {
   try {
-    const { token, action } = await parseJsonBody(req);
+    const { token } = await parseJsonBody(req);
 
     if (!token) {
       sendJson(res, 400, { success: false, error: 'Missing token' });
@@ -106,7 +106,7 @@ async function handleVerifyRecaptcha(req, res) {
     }
 
     const verification = await verifyRecaptchaV3(token);
-    console.log('[reCAPTCHA v3] Verification result:', verification);
+    console.log('[reCAPTCHA v2] Verification result:', verification);
 
     if (!verification.success) {
       sendJson(res, 400, {
@@ -119,11 +119,10 @@ async function handleVerifyRecaptcha(req, res) {
 
     sendJson(res, 200, {
       success: true,
-      score: verification.score,
-      action: verification.action
+      hostname: verification.hostname
     });
   } catch (err) {
-    console.error('[reCAPTCHA v3] Verification error:', err.message);
+    console.error('[reCAPTCHA v2] Verification error:', err.message);
     sendJson(res, 500, { success: false, error: 'Verification service error' });
   }
 }

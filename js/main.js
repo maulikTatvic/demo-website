@@ -258,11 +258,11 @@ function initJobApplyTracking() {
 /**
  * Handles consultation form submission
  * Custom Event #1: lead_form_submit
- * Parameters: form_id, form_name, form_status, inquiry_type, company_name, recaptcha_score
+ * Parameters: form_id, form_name, form_status, inquiry_type, company_name, recaptcha_status
  * @param {HTMLFormElement} form
- * @param {number|null} recaptchaScore - reCAPTCHA Enterprise risk score (0.0-1.0)
+ * @param {string} recaptchaStatus - reCAPTCHA v2 verification status ('verified', 'failed', 'unavailable')
  */
-function handleLeadFormSubmit(form, recaptchaScore = null) {
+function handleLeadFormSubmit(form, recaptchaStatus = 'verified') {
   if (!form.checkValidity()) {
     form.reportValidity();
     return;
@@ -277,7 +277,8 @@ function handleLeadFormSubmit(form, recaptchaScore = null) {
     form_status: 'success',
     inquiry_type: inquiryType,
     company_name: companyName,
-    recaptcha_score: recaptchaScore !== null ? recaptchaScore : 'unavailable'
+    recaptcha_score: recaptchaStatus === 'verified' ? 'verified' : 'failed',
+    recaptcha_status: recaptchaStatus
   });
 
   if (feedback) {
@@ -285,6 +286,9 @@ function handleLeadFormSubmit(form, recaptchaScore = null) {
     feedback.className = 'form-feedback success';
   }
   form.reset();
+  if (typeof grecaptcha !== 'undefined') {
+    try { grecaptcha.reset(); } catch (e) {}
+  }
   setTimeout(() => { if (feedback) feedback.className = 'form-feedback'; }, 5000);
 }
 
@@ -325,40 +329,45 @@ function handleNewsletterSubmit(form) {
   form.reset();
 }
 /**
- * Initializes form submission listeners
+ * Initializes form submission listeners with reCAPTCHA v2 Checkbox validation
  */
 function initForms() {
   const contactForm = document.getElementById('contact-form');
   if (contactForm) {
-    contactForm.addEventListener('submit', (e) => {
+    contactForm.addEventListener('submit', async (e) => {
       e.preventDefault();
+      const feedback = contactForm.querySelector('.form-feedback');
+
+      let responseToken = '';
       if (typeof grecaptcha !== 'undefined') {
-        grecaptcha.ready(async () => {
-          let recaptchaScore = null;
-          try {
-            const token = await grecaptcha.execute('6LcX4bUtAAAAAJZxhC1uLjXhR_ACTfyvV7kWPVEh', { action: 'LOGIN' });
-            console.log('[reCAPTCHA v3] Token generated:', token.substring(0, 40) + '...');
-
-            const res = await fetch('/api/verify-recaptcha', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ token, action: 'LOGIN' })
-            });
-            const result = await res.json();
-            console.log('[reCAPTCHA v3] Verification result:', result);
-
-            if (result.success && result.score !== undefined) {
-              recaptchaScore = result.score;
-              console.log('[reCAPTCHA v3] Score: ' + recaptchaScore + ' (0.0 = bot, 1.0 = human)');
-            }
-          } catch (err) {
-            console.warn('[reCAPTCHA v3] Error:', err.message);
-          }
-          handleLeadFormSubmit(contactForm, recaptchaScore);
-        });
-      } else {
-        handleLeadFormSubmit(contactForm, null);
+        responseToken = grecaptcha.getResponse();
       }
+
+      if (!responseToken) {
+        showFormFeedback(feedback, { text: 'Please complete the "I\'m not a robot" checkbox.', type: 'error' });
+        return;
+      }
+
+      let recaptchaStatus = 'failed';
+      try {
+        console.log('[reCAPTCHA v2] Token obtained from checkbox:', responseToken.substring(0, 40) + '...');
+        const res = await fetch('/api/verify-recaptcha', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ token: responseToken })
+        });
+        const result = await res.json();
+        console.log('[reCAPTCHA v2] Backend verification result:', result);
+
+        if (result.success) {
+          recaptchaStatus = 'verified';
+          console.log('[reCAPTCHA v2] Status: verified (human confirmed by checkbox)');
+        }
+      } catch (err) {
+        console.warn('[reCAPTCHA v2] Verification error:', err.message);
+      }
+
+      handleLeadFormSubmit(contactForm, recaptchaStatus);
     });
   }
 
