@@ -144,6 +144,16 @@ function getSafeFilePath(urlPath) {
  * @param {http.ServerResponse} res
  * @param {string} filePath
  */
+// CSP allowing Google reCAPTCHA v3 and Google Tag Manager
+const CSP_HEADER = [
+  "default-src 'self'",
+  "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com https://www.googletagmanager.com",
+  "frame-src https://www.google.com",
+  "connect-src 'self' https://www.google.com https://www.googletagmanager.com https://www.google-analytics.com",
+  "img-src 'self' data: https://www.google.com https://www.gstatic.com https://www.googletagmanager.com",
+  "style-src 'self' 'unsafe-inline'"
+].join('; ');
+
 function serveFile(res, filePath) {
   fs.readFile(filePath, (err, content) => {
     if (err) {
@@ -153,7 +163,11 @@ function serveFile(res, filePath) {
     }
     const ext = path.extname(filePath).toLowerCase();
     const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    res.writeHead(200, { 'Content-Type': contentType });
+    const headers = { 'Content-Type': contentType };
+    if (ext === '.html') {
+      headers['Content-Security-Policy'] = CSP_HEADER;
+    }
+    res.writeHead(200, headers);
     res.end(content);
   });
 }
