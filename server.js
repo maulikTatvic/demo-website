@@ -1,5 +1,5 @@
 /**
- * NexusTech Solutions - Static Server + reCAPTCHA v3 Verification API
+ * NexusTech Solutions - Static Server + Dual reCAPTCHA (v2 Checkbox & Enterprise/v3 Score) APIs
  */
 
 'use strict';
@@ -8,9 +8,31 @@ const http = require('http');
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
+const { RecaptchaEnterpriseServiceClient } = require('@google-cloud/recaptcha-enterprise');
 
 const PORT = process.env.PORT || 8080;
-const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6LcX4bUtAAAAAHPW58tAq8V2-6uaCR9cQUpcwj4c';
+
+// reCAPTCHA v2 Checkbox Secret Key
+const RECAPTCHA_V2_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || '6LcX4bUtAAAAAHPW58tAq8V2-6uaCR9cQUpcwj4c';
+
+// reCAPTCHA Enterprise / v3 Settings (gtagdemosite project)
+const RECAPTCHA_V3_PROJECT_ID = 'gtagdemosite';
+const RECAPTCHA_V3_SITE_KEY = '6Ld7dw8uAAAAAF0qsVlUG3njrghGw-Bi29BfxQX7';
+
+// Load GCP credentials (local file or base64 env var)
+if (!process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+  const localKeyPath = path.join(__dirname, 'gcp-credentials.json');
+  if (fs.existsSync(localKeyPath)) {
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = localKeyPath;
+    console.log('[GCP] Credentials loaded from local gcp-credentials.json');
+  } else if (process.env.GCP_CREDENTIALS_BASE64) {
+    const decoded = Buffer.from(process.env.GCP_CREDENTIALS_BASE64, 'base64').toString('utf8');
+    const tmpPath = path.join(require('os').tmpdir(), 'gcp-key.json');
+    fs.writeFileSync(tmpPath, decoded);
+    process.env.GOOGLE_APPLICATION_CREDENTIALS = tmpPath;
+    console.log('[GCP] Credentials loaded from GCP_CREDENTIALS_BASE64');
+  }
+}
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -23,14 +45,14 @@ const MIME_TYPES = {
 };
 
 /**
- * Verifies a reCAPTCHA v3 token using Google's siteverify API
+ * Verifies a reCAPTCHA v2 token using Google's siteverify API
  * @param {string} token
- * @returns {Promise<{ success: boolean, score?: number, action?: string }>}
+ * @returns {Promise<{ success: boolean, hostname?: string }>}
  */
-function verifyRecaptchaV3(token) {
+function verifyRecaptchaV2(token) {
   return new Promise((resolve, reject) => {
     const postData = new URLSearchParams({
-      secret: RECAPTCHA_SECRET_KEY,
+      secret: RECAPTCHA_V2_SECRET_KEY,
       response: token,
     }).toString();
 
@@ -65,6 +87,37 @@ function verifyRecaptchaV3(token) {
 }
 
 /**
+ * Creates a reCAPTCHA Enterprise/v3 assessment to get numeric risk score
+ * @param {string} token
+ * @param {string} action
+ * @returns {Promise<number|null>}
+ */
+async function verifyRecaptchaV3(token, action = 'LOGIN') {
+  const client = new RecaptchaEnterpriseServiceClient();
+  const projectPath = client.projectPath(RECAPTCHA_V3_PROJECT_ID);
+
+  const request = {
+    assessment: {
+      event: {
+        token: token,
+        siteKey: RECAPTCHA_V3_SITE_KEY,
+      },
+    },
+    parent: projectPath,
+  };
+
+  const [response] = await client.createAssessment(request);
+
+  if (!response.tokenProperties.valid) {
+    console.log('[reCAPTCHA v3] Token invalid. Reason: ' + response.tokenProperties.invalidReason);
+    return null;
+  }
+
+  console.log('[reCAPTCHA v3] Score: ' + response.riskAnalysis.score);
+  return response.riskAnalysis.score;
+}
+
+/**
  * Reads and parses JSON body from an incoming request
  * @param {http.IncomingMessage} req
  * @returns {Promise<Object>}
@@ -92,38 +145,56 @@ function sendJson(res, statusCode, data) {
 }
 
 /**
- * Handles POST /api/verify-recaptcha for reCAPTCHA v2
+ * Handles POST /api/verify-recaptcha-v2
  * @param {http.IncomingMessage} req
  * @param {http.ServerResponse} res
  */
-async function handleVerifyRecaptcha(req, res) {
+async function handleVerifyV2(req, res) {
   try {
     const { token } = await parseJsonBody(req);
-
     if (!token) {
       sendJson(res, 400, { success: false, error: 'Missing token' });
       return;
     }
 
-    const verification = await verifyRecaptchaV3(token);
-    console.log('[reCAPTCHA v2] Verification result:', verification);
+    const verification = await verifyRecaptchaV2(token);
+    console.log('[reCAPTCHA v2] Result:', verification);
 
     if (!verification.success) {
-      sendJson(res, 400, {
-        success: false,
-        error: 'reCAPTCHA verification failed',
-        errorCodes: verification['error-codes']
-      });
+      sendJson(res, 400, { success: false, error: 'reCAPTCHA v2 verification failed' });
       return;
     }
 
-    sendJson(res, 200, {
-      success: true,
-      hostname: verification.hostname
-    });
+    sendJson(res, 200, { success: true, hostname: verification.hostname });
   } catch (err) {
-    console.error('[reCAPTCHA v2] Verification error:', err.message);
-    sendJson(res, 500, { success: false, error: 'Verification service error' });
+    console.error('[reCAPTCHA v2] Error:', err.message);
+    sendJson(res, 500, { success: false, error: err.message });
+  }
+}
+
+/**
+ * Handles POST /api/verify-recaptcha-v3
+ * @param {http.IncomingMessage} req
+ * @param {http.ServerResponse} res
+ */
+async function handleVerifyV3(req, res) {
+  try {
+    const { token, action } = await parseJsonBody(req);
+    if (!token) {
+      sendJson(res, 400, { success: false, error: 'Missing token' });
+      return;
+    }
+
+    const score = await verifyRecaptchaV3(token, action || 'LOGIN');
+    if (score === null) {
+      sendJson(res, 400, { success: false, error: 'reCAPTCHA v3 verification failed' });
+      return;
+    }
+
+    sendJson(res, 200, { success: true, score });
+  } catch (err) {
+    console.error('[reCAPTCHA v3] Error:', err.message);
+    sendJson(res, 500, { success: false, error: err.message });
   }
 }
 
@@ -138,12 +209,6 @@ function getSafeFilePath(urlPath) {
   return path.join(__dirname, path.normalize(relativePath));
 }
 
-/**
- * Serves a file or returns 404
- * @param {http.ServerResponse} res
- * @param {string} filePath
- */
-// CSP allowing Google reCAPTCHA v3 and Google Tag Manager
 const CSP_HEADER = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline' https://www.google.com https://www.gstatic.com https://www.googletagmanager.com",
@@ -178,12 +243,20 @@ function serveFile(res, filePath) {
  */
 function handleRequest(req, res) {
   if (req.method === 'GET' && req.url === '/api/health') {
-    sendJson(res, 200, { status: 'ok', recaptcha: 'v3', secretConfigured: !!RECAPTCHA_SECRET_KEY });
+    const creds = process.env.GOOGLE_APPLICATION_CREDENTIALS ? 'set' : 'missing';
+    sendJson(res, 200, { status: 'ok', v2: true, v3: true, credentials: creds });
     return;
   }
 
-  if (req.method === 'POST' && req.url === '/api/verify-recaptcha') {
-    handleVerifyRecaptcha(req, res);
+  // Backward compatibility + specific v2 endpoint
+  if (req.method === 'POST' && (req.url === '/api/verify-recaptcha-v2' || req.url === '/api/verify-recaptcha')) {
+    handleVerifyV2(req, res);
+    return;
+  }
+
+  // Dedicated v3 endpoint
+  if (req.method === 'POST' && req.url === '/api/verify-recaptcha-v3') {
+    handleVerifyV3(req, res);
     return;
   }
 
@@ -199,5 +272,5 @@ function handleRequest(req, res) {
 const server = http.createServer(handleRequest);
 
 server.listen(PORT, () => {
-  console.log('NexusTech Server running at http://localhost:' + PORT + '/ (reCAPTCHA v3 mode)');
+  console.log(`NexusTech Server running at http://localhost:${PORT}/ (Dual reCAPTCHA v2 & v3 mode)`);
 });

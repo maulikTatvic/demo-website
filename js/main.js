@@ -256,13 +256,13 @@ function initJobApplyTracking() {
 }
 
 /**
- * Handles consultation form submission
+ * Handles consultation form submission (supports both v2 status and v3 numeric score)
  * Custom Event #1: lead_form_submit
- * Parameters: form_id, form_name, form_status, inquiry_type, company_name, recaptcha_status
+ * Parameters: form_id, form_name, form_status, inquiry_type, company_name, recaptcha_score
  * @param {HTMLFormElement} form
- * @param {string} recaptchaStatus - reCAPTCHA v2 verification status ('verified', 'failed', 'unavailable')
+ * @param {string|number|null} recaptchaResult - Score (0.0-1.0) or status ('verified', 'failed')
  */
-function handleLeadFormSubmit(form, recaptchaStatus = 'verified') {
+function handleLeadFormSubmit(form, recaptchaResult = null) {
   if (!form.checkValidity()) {
     form.reportValidity();
     return;
@@ -272,13 +272,12 @@ function handleLeadFormSubmit(form, recaptchaStatus = 'verified') {
   const companyName = form.querySelector('#company-name')?.value || 'unspecified';
 
   trackCustomEvent('lead_form_submit', {
-    form_id: 'contact-form',
+    form_id: form.id || 'contact-form',
     form_name: 'consultation_request',
     form_status: 'success',
     inquiry_type: inquiryType,
     company_name: companyName,
-    recaptcha_score: recaptchaStatus === 'verified' ? 'verified' : 'failed',
-    recaptcha_status: recaptchaStatus
+    recaptcha_score: recaptchaResult !== null ? recaptchaResult : 'unavailable'
   });
 
   if (feedback) {
@@ -286,7 +285,7 @@ function handleLeadFormSubmit(form, recaptchaStatus = 'verified') {
     feedback.className = 'form-feedback success';
   }
   form.reset();
-  if (typeof grecaptcha !== 'undefined') {
+  if (typeof grecaptcha !== 'undefined' && grecaptcha.reset) {
     try { grecaptcha.reset(); } catch (e) {}
   }
   setTimeout(() => { if (feedback) feedback.className = 'form-feedback'; }, 5000);
@@ -329,9 +328,12 @@ function handleNewsletterSubmit(form) {
   form.reset();
 }
 /**
- * Initializes form submission listeners with reCAPTCHA v2 Checkbox validation
+ * Initializes form submission listeners with dual support:
+ * 1. #contact-form (reCAPTCHA v2 Checkbox)
+ * 2. #contact-form-v3 (reCAPTCHA v3 / Enterprise Score)
  */
 function initForms() {
+  // Page 1: reCAPTCHA v2 Checkbox Form
   const contactForm = document.getElementById('contact-form');
   if (contactForm) {
     contactForm.addEventListener('submit', async (e) => {
@@ -339,7 +341,7 @@ function initForms() {
       const feedback = contactForm.querySelector('.form-feedback');
 
       let responseToken = '';
-      if (typeof grecaptcha !== 'undefined') {
+      if (typeof grecaptcha !== 'undefined' && grecaptcha.getResponse) {
         responseToken = grecaptcha.getResponse();
       }
 
@@ -348,26 +350,61 @@ function initForms() {
         return;
       }
 
-      let recaptchaStatus = 'failed';
+      let status = 'failed';
       try {
-        console.log('[reCAPTCHA v2] Token obtained from checkbox:', responseToken.substring(0, 40) + '...');
-        const res = await fetch('/api/verify-recaptcha', {
+        console.log('[reCAPTCHA v2] Token from checkbox:', responseToken.substring(0, 40) + '...');
+        const res = await fetch('/api/verify-recaptcha-v2', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ token: responseToken })
         });
         const result = await res.json();
-        console.log('[reCAPTCHA v2] Backend verification result:', result);
+        console.log('[reCAPTCHA v2] Result:', result);
 
         if (result.success) {
-          recaptchaStatus = 'verified';
-          console.log('[reCAPTCHA v2] Status: verified (human confirmed by checkbox)');
+          status = 'verified';
+          console.log('[reCAPTCHA v2] Verified successfully!');
         }
       } catch (err) {
-        console.warn('[reCAPTCHA v2] Verification error:', err.message);
+        console.warn('[reCAPTCHA v2] Error:', err.message);
       }
 
-      handleLeadFormSubmit(contactForm, recaptchaStatus);
+      handleLeadFormSubmit(contactForm, status);
+    });
+  }
+
+  // Page 2: reCAPTCHA v3 / Enterprise Invisible Score Form
+  const contactFormV3 = document.getElementById('contact-form-v3');
+  if (contactFormV3) {
+    contactFormV3.addEventListener('submit', (e) => {
+      e.preventDefault();
+      if (typeof grecaptcha !== 'undefined' && grecaptcha.enterprise) {
+        grecaptcha.enterprise.ready(async () => {
+          let recaptchaScore = null;
+          try {
+            const token = await grecaptcha.enterprise.execute('6Ld7dw8uAAAAAF0qsVlUG3njrghGw-Bi29BfxQX7', { action: 'LOGIN' });
+            console.log('[reCAPTCHA v3] Token generated:', token.substring(0, 40) + '...');
+
+            const res = await fetch('/api/verify-recaptcha-v3', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ token, action: 'LOGIN' })
+            });
+            const result = await res.json();
+            console.log('[reCAPTCHA v3] Assessment result:', result);
+
+            if (result.success && result.score !== undefined) {
+              recaptchaScore = result.score;
+              console.log('[reCAPTCHA v3] Score: ' + recaptchaScore + ' (0.0 = bot, 1.0 = human)');
+            }
+          } catch (err) {
+            console.warn('[reCAPTCHA v3] Error:', err.message);
+          }
+          handleLeadFormSubmit(contactFormV3, recaptchaScore);
+        });
+      } else {
+        handleLeadFormSubmit(contactFormV3, null);
+      }
     });
   }
 
